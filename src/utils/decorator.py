@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Dict, Tuple
 from dataclasses import dataclass
 from chess import Board, Move
 from chess.pgn import read_game
@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 class GameContext:
     board: Board
     timeLeft: int  # in milliseconds
-    logProbabilities: Callable[[dict[Move, float]], None]
+    logProbabilities: Callable[[Dict[Move, float]], None]
 
 
 class ChessManager:
@@ -97,7 +97,7 @@ class ChessManager:
         if captured_output:
             self._logger.info("Model stdout/stderr:\n%s", captured_output)
 
-    def get_model_move(self) -> tuple[Move, dict[Move, float], str]:
+    def get_model_move(self) -> Tuple[Move, Dict[Move, float], str]:
 
         if (self._func is None):
             raise ValueError("No entrypoint set")
@@ -118,7 +118,7 @@ class ChessManager:
 
         return result, self._move_probabilities, captured_output
 
-    def update_move_probabilities(self, probabilities: dict[Move, float]):
+    def update_move_probabilities(self, probabilities: Dict[Move, float]):
         self._move_probabilities = probabilities
 
 # Lie to lsp's about type of the decorator
