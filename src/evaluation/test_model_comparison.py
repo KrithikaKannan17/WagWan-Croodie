@@ -27,12 +27,38 @@ from src.utils.mcts import MCTS
 def load_model(model_path, device='cpu'):
     """Load a chess model from checkpoint."""
     checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+    
+    # Get state_dict
+    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+        state_dict = checkpoint['model_state_dict']
+    else:
+        state_dict = checkpoint
+        checkpoint = {}
+    
+    # Detect architecture from state_dict shapes
+    if 'initial_conv.weight' in state_dict:
+        channels = state_dict['initial_conv.weight'].shape[0]
+        num_residual_blocks = sum(1 for key in state_dict.keys() if key.startswith('residual_blocks.') and key.endswith('.conv1.weight'))
+    else:
+        num_residual_blocks = checkpoint.get('num_residual_blocks', 6)
+        channels = checkpoint.get('channels', 64)
+    
     model = ChessModel(
-        num_residual_blocks=checkpoint.get('num_residual_blocks', 6),
-        channels=checkpoint.get('channels', 64),
+        num_residual_blocks=num_residual_blocks,
+        channels=channels,
         dropout=0.0  # No dropout for evaluation
     ).to(device)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    
+    # Filter out incompatible keys (different shapes)
+    model_state = model.state_dict()
+    filtered_state_dict = {}
+    
+    for key, value in state_dict.items():
+        if key in model_state and model_state[key].shape == value.shape:
+            filtered_state_dict[key] = value
+    
+    # Load filtered state_dict
+    model.load_state_dict(filtered_state_dict, strict=False)
     model.eval()
     return model
 

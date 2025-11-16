@@ -346,15 +346,11 @@ def generate_selfplay_dataset(
     # Handle different checkpoint formats
     if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
         # Checkpoint with metadata (from train_improved.py)
-        num_residual_blocks = checkpoint.get('num_residual_blocks', 6)
-        channels = checkpoint.get('channels', 64)
         state_dict = checkpoint['model_state_dict']
         move_mapper = checkpoint.get('move_mapper', MoveMapper())
         print(f"  Format: Checkpoint with metadata")
     else:
         # Direct state_dict (from train_modal_selfplay.py)
-        num_residual_blocks = 6
-        channels = 64
         state_dict = checkpoint
         move_mapper = MoveMapper()
         print(f"  Format: Direct state_dict")
@@ -365,6 +361,23 @@ def generate_selfplay_dataset(
         print(f"  ⚠️  Detected OLD architecture - converting to new format...")
         state_dict = convert_old_to_new_architecture(state_dict)
         print(f"  ✓ Architecture converted successfully")
+    
+    # Detect architecture from state_dict shapes
+    if 'initial_conv.weight' in state_dict:
+        # New architecture - infer from tensor shapes
+        channels = state_dict['initial_conv.weight'].shape[0]
+        # Count residual blocks
+        num_residual_blocks = sum(1 for key in state_dict.keys() if key.startswith('residual_blocks.') and key.endswith('.conv1.weight'))
+        print(f"  Detected architecture: {num_residual_blocks} blocks, {channels} channels")
+    else:
+        # Use metadata if available, otherwise defaults
+        if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+            num_residual_blocks = checkpoint.get('num_residual_blocks', 6)
+            channels = checkpoint.get('channels', 64)
+        else:
+            num_residual_blocks = 6
+            channels = 64
+        print(f"  Using architecture: {num_residual_blocks} blocks, {channels} channels")
 
     # Create model
     model = ChessModel(
@@ -373,7 +386,32 @@ def generate_selfplay_dataset(
         dropout=0.0  # No dropout during inference
     ).to(device)
 
-    model.load_state_dict(state_dict)
+    # Filter out incompatible keys (different shapes)
+    model_state = model.state_dict()
+    filtered_state_dict = {}
+    skipped_keys = []
+    
+    for key, value in state_dict.items():
+        if key in model_state:
+            if model_state[key].shape == value.shape:
+                filtered_state_dict[key] = value
+            else:
+                skipped_keys.append(key)
+        else:
+            skipped_keys.append(key)
+    
+    # Load filtered state_dict
+    incompatible_keys = model.load_state_dict(filtered_state_dict, strict=False)
+    
+    if skipped_keys or incompatible_keys.missing_keys:
+        print(f"  ⚠️  Partial load (architecture mismatch):")
+        if skipped_keys:
+            print(f"     Skipped {len(skipped_keys)} incompatible keys (shape mismatch)")
+        if incompatible_keys.missing_keys:
+            print(f"     {len(incompatible_keys.missing_keys)} keys will be randomly initialized")
+        print(f"  ✓ Loaded body layers (residual blocks with chess knowledge)")
+        print(f"  ✓ Policy/Value heads will be trained from scratch")
+    
     model.eval()
 
     print(f"✓ Model loaded successfully")

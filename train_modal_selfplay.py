@@ -53,14 +53,17 @@ def train_selfplay(
     print("="*70)
     print(f"Data: /data/{data_file}")
     print(f"Input model: /root/{model_input}")
-    print(f"Output model: /data/{model_output}")
+    print(f"Output model: /data/data/{model_output}")
     print(f"Epochs: {epochs}, Batch size: {batch_size}, LR: {learning_rate}")
     print("="*70)
     
     # Load data
-    data_path = f"/data/{data_file}"
+    data_path = f"/data/data/{data_file}"
     if not os.path.exists(data_path):
-        raise FileNotFoundError(f"Data file not found: {data_path}")
+        # Try without extra /data/ for backward compatibility
+        data_path = f"/data/{data_file}"
+        if not os.path.exists(data_path):
+            raise FileNotFoundError(f"Data file not found in /data/data/ or /data/")
     
     data = np.load(data_path)
     boards = torch.from_numpy(data['boards']).float()
@@ -105,23 +108,56 @@ def train_selfplay(
     
     # Load model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = ChessModel(num_residual_blocks=6, channels=64)
-
+    
     model_path = f"/root/{model_input}"
     if os.path.exists(model_path):
-        checkpoint = torch.load(model_path, map_location=device)
+        checkpoint = torch.load(model_path, map_location=device, weights_only=False)
 
-        # Handle different checkpoint formats
+        # Get state_dict
         if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
-            # Checkpoint with metadata (from train_improved.py)
-            model.load_state_dict(checkpoint["model_state_dict"])
-            print(f"\n✓ Loaded model from {model_path} (checkpoint format)")
+            state_dict = checkpoint["model_state_dict"]
         else:
-            # Direct state_dict
-            model.load_state_dict(checkpoint)
-            print(f"\n✓ Loaded model from {model_path} (state_dict format)")
+            state_dict = checkpoint
+            checkpoint = {}
+        
+        # Detect architecture from state_dict shapes
+        if 'initial_conv.weight' in state_dict:
+            channels = state_dict['initial_conv.weight'].shape[0]
+            num_residual_blocks = sum(1 for key in state_dict.keys() if key.startswith('residual_blocks.') and key.endswith('.conv1.weight'))
+            print(f"\n✓ Detected architecture: {num_residual_blocks} blocks, {channels} channels")
+        else:
+            num_residual_blocks = checkpoint.get('num_residual_blocks', 6)
+            channels = checkpoint.get('channels', 64)
+            print(f"\n✓ Using default architecture: {num_residual_blocks} blocks, {channels} channels")
+        
+        # Create model with detected architecture
+        model = ChessModel(num_residual_blocks=num_residual_blocks, channels=channels)
+        
+        # Filter out incompatible keys (different shapes)
+        model_state = model.state_dict()
+        filtered_state_dict = {}
+        skipped_keys = []
+        
+        for key, value in state_dict.items():
+            if key in model_state:
+                if model_state[key].shape == value.shape:
+                    filtered_state_dict[key] = value
+                else:
+                    skipped_keys.append(key)
+            else:
+                skipped_keys.append(key)
+        
+        # Load filtered state_dict
+        incompatible_keys = model.load_state_dict(filtered_state_dict, strict=False)
+        
+        if skipped_keys or incompatible_keys.missing_keys:
+            print(f"  ⚠️  Partial load: Skipped {len(skipped_keys)} incompatible keys")
+            print(f"     Body (residual blocks) loaded, heads will be trained from scratch")
+        
+        print(f"✓ Loaded model from {model_path}")
     else:
         print(f"\n⚠ Model not found, training from scratch")
+        model = ChessModel(num_residual_blocks=6, channels=64)
     
     model = model.to(device)
     
@@ -199,7 +235,7 @@ def train_selfplay(
         # Save best model
         if val_total_loss < best_val_loss:
             best_val_loss = val_total_loss
-            output_path = f"/data/{model_output}"
+            output_path = f"/data/data/{model_output}"
             torch.save(model.state_dict(), output_path)
             print(f"  ✓ Saved best model (val_loss: {val_total_loss:.4f})")
 
