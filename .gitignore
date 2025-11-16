@@ -1,35 +1,71 @@
-__pycache__
-.venv
-.venv312
-venv
-.env.local
-.env
-devtools
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Training files (NOT needed for deployment)
-train.py
-train_*.py
-tactical_data.py
-tactical_generator.py
-selfplay_generator.py
-merge_datasets.py
-pipeline.py
-evaluate_*.py
-*_modal.py
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
 
-# Training data
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.history/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# PyTorch Models (optional - uncomment if models are too large for git)
+models/*.pth
+*.pth
+
+# Training Data (large files)
 *.npz
 
-# Extra model checkpoints (keep only chess_model.pth)
-best_model_*.pth
-phase3_*.pth
-*_v*.pth
-
-# Test files
-tests/
-
-# Shell scripts
-*.sh
+# Datasets
+datasets/
+training_data/
 
 # Logs
 *.log
+
+# Environment variables
+.env
+.env.local
+
+# DevTools (Next.js)
+devtools/node_modules/
+devtools/.next/
+devtools/out/
+devtools/.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
