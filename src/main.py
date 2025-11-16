@@ -46,10 +46,10 @@ def _load_model():
         try:
             _model.load_state_dict(state_dict, strict=False)
             if is_old_model:
-                print("  ⚠ Old MLP checkpoint detected - weights not compatible, using new CNN architecture")
+                print("  [WARNING] Old MLP checkpoint detected - weights not compatible, using new CNN architecture")
                 print("  Please retrain the model with the new architecture for best performance")
             else:
-                print("  ✓ Model weights loaded successfully")
+                print("  [OK] Model weights loaded successfully")
         except Exception as load_error:
             print(f"  Warning: Could not load weights: {load_error}")
             print("  Model initialized with random weights - please retrain")
@@ -66,7 +66,7 @@ def _load_model():
         # Default to 50 simulations, but can be adjusted
         _mcts = MCTS(_model, _move_mapper, num_simulations=50, exploration_constant=1.5)
         
-        print(f"✓ Loaded model from {model_path}")
+        print(f"[OK] Loaded model from {model_path}")
         print(f"  Model architecture: CNN/ResNet")
         print(f"  Model parameters: {sum(p.numel() for p in _model.parameters()):,}")
     except Exception as e:

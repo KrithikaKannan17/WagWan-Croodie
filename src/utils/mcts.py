@@ -159,43 +159,54 @@ class MCTS:
         self.exploration_constant = exploration_constant
         self.model.eval()
     
-    def search(self, board: Board) -> Tuple[Move, Dict[Move, float]]:
+    def search(self, board: Board, add_dirichlet: bool = False) -> Tuple[Move, Dict[Move, float]]:
         """
         Perform MCTS search from given position.
-        
+
         Args:
             board: Current board position
-            
+            add_dirichlet: Whether to add Dirichlet noise to root (for exploration)
+
         Returns:
             Best move and move probabilities (from visit counts)
         """
         root = MCTSNode(board)
-        
+        self.root = root  # Store root for external access (e.g., resignation logic)
+
         # Get initial policy and value from neural network
         policy_prior, value_estimate = self._evaluate_position(root.board)
+
+        # Add Dirichlet noise to root for exploration (AlphaZero style)
+        if add_dirichlet:
+            policy_prior = self._add_dirichlet_noise(policy_prior)
+
         root.expand(policy_prior, value_estimate)
         
         # Run simulations
         for _ in range(self.num_simulations):
             # Selection: traverse from root to leaf
             node = self._select(root)
-            
+
             # Evaluation: get policy and value from neural network
-            if not node.is_terminal():
+            # Only evaluate if not already expanded and not terminal
+            if not node.is_terminal() and not node.expanded:
                 policy_prior, value_estimate = self._evaluate_position(node.board)
                 node.expand(policy_prior, value_estimate)
-                
+
                 # Expand: add children for all legal moves
                 self._expand(node)
-            
+
             # Backpropagation: update statistics
             if node.is_terminal():
-                # Terminal node: get actual game result
+                # Terminal node: get actual game result (from perspective of player to move)
                 value = self._get_terminal_value(node.board)
+            elif node.expanded:
+                # Use neural network value estimate from expansion
+                value = node.value_estimate
             else:
-                # Use neural network value estimate
-                value = value_estimate
-            
+                # Shouldn't happen, but fallback to 0
+                value = 0.0
+
             node.backpropagate(value)
         
         # Get best move and probabilities
@@ -249,16 +260,21 @@ class MCTS:
             Tuple of (policy_prior, value_estimate)
         """
         from .board_encoder import board_to_tensor_torch
-        
+
         board_tensor = board_to_tensor_torch(board)
+
+        # Move tensor to same device as model
+        device = next(self.model.parameters()).device
+        board_tensor = board_tensor.to(device)
+
         legal_moves = list(board.generate_legal_moves())
-        
+
         with torch.no_grad():
             policy_logits, value = self.model(board_tensor)
-        
-        # Convert to move probabilities
+
+        # Convert to move probabilities (move to CPU first if on GPU)
         policy_prior = self.move_mapper.get_move_probabilities(
-            policy_logits[0].numpy(), legal_moves
+            policy_logits[0].cpu().numpy(), legal_moves
         )
         
         # Get value estimate
@@ -320,4 +336,33 @@ class MCTS:
             move_probs = {move: prob / total_prob for move, prob in move_probs.items()}
         
         return move_probs
+
+    def _add_dirichlet_noise(self, policy_prior: Dict[Move, float],
+                            alpha: float = 0.3, epsilon: float = 0.25) -> Dict[Move, float]:
+        """
+        Add Dirichlet noise to policy prior for exploration (AlphaZero style).
+
+        Args:
+            policy_prior: Original policy prior
+            alpha: Dirichlet alpha parameter (0.3 for chess)
+            epsilon: Mixing weight (0.25 = 75% prior, 25% noise)
+
+        Returns:
+            Policy prior with Dirichlet noise added
+        """
+        import numpy as np
+
+        moves = list(policy_prior.keys())
+        probs = np.array([policy_prior[move] for move in moves])
+
+        # Generate Dirichlet noise
+        noise = np.random.dirichlet([alpha] * len(moves))
+
+        # Mix prior with noise
+        noisy_probs = (1 - epsilon) * probs + epsilon * noise
+
+        # Normalize
+        noisy_probs = noisy_probs / noisy_probs.sum()
+
+        return {move: float(prob) for move, prob in zip(moves, noisy_probs)}
 

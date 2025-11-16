@@ -4,17 +4,35 @@ This is a starter bot for ChessHacks. It includes a basic bot and devtools. This
 
 ## Directory Structure
 
-`/devtools` is a Next.js app that provides a UI for testing your bot. It includes an analysis board that you can use to test your bot and play against your own bot. You do not need to edit, or look at, any of this code (unless you want to). This file should be gitignored. Find out why [here](#installing-devtools-if-you-did-not-run-npx-chesshacks-create).
+### Core Directories
 
-`/src` is the source code for your bot. You will need to edit this code to implement your own bot.
+- **`/src`** - Source code for your bot
+  - `/src/utils/` - Core utilities (model, MCTS, encoders)
+  - `/src/data/` - Data generation scripts
+  - `/src/training/` - Training scripts by phase
+  - `/src/evaluation/` - Model testing & comparison
+  - `/src/main.py` - Bot entry point
 
-`serve.py` is the backend that interacts with the Next.js and your bot (`/src/main.py`). It also handles hot reloading of your bot when you make changes to it. This file, after receiving moves from the frontend, will communicate the current board status to your bot as a PGN string, and will send your bot's move back to the frontend. You do not need to edit any of this code (unless you want to).
+- **`/datasets`** - All training data (`.npz` files)
 
-While developing, you do not need to run either of the Python files yourself. The Next.js app includes the `serve.py` file as a subprocess, and will run it for you when you run `npm run dev`.
+- **`/devtools`** - Next.js UI for testing your bot (gitignored)
 
-The backend (as a subprocess) will deploy on port `5058` by default.
+- **`/tests`** - Phase-specific tests
 
-This architecture is very similar to how your bot will run once you deploy it. For more information about how to deploy your bot to the ChessHacks platform, see [the docs](https://docs.chesshacks.dev/).
+### Root-Level Scripts
+
+- `serve.py` - FastAPI backend for devtools UI
+- `selfplay_generator.py` - Local self-play generation
+- `selfplay_modal.py` - Modal GPU self-play
+- `train_modal_selfplay.py` - Modal GPU training
+
+### How It Works
+
+`serve.py` is the backend that interacts with the Next.js app and your bot (`/src/main.py`). It handles hot reloading when you make changes. The Next.js app runs `serve.py` as a subprocess when you run `npm run dev`.
+
+The backend deploys on port `5058` by default.
+
+This architecture is similar to how your bot will run once deployed. See [the docs](https://docs.chesshacks.dev/) for deployment info.
 
 ## Setup
 
@@ -86,6 +104,52 @@ Once you run the app, you should see logs from both the Next.js app and the Pyth
 ## HMR (Hot Module Reloading)
 
 By default, the Next.js app will automatically reload (dismount and remount the subprocess) when you make changes to the code in `/src` OR press the manual reload button on the frontend. This is called HMR (Hot Module Reloading). This means that you don't need to restart the app every time you make a change to the Python code. You can see how it's happening in real-time in the Next.js terminal.
+
+## 🚀 Quick Command Reference
+
+### **Data Generation**
+```powershell
+# Generate random games for bootstrapping
+python -m src.data.generate_random_games --games 5000 --output datasets/random_5k.npz
+
+# Generate Stockfish games (requires Stockfish installed)
+python -m src.data.generate_stockfish_data --num-games 500 --depth 10
+
+# Merge multiple datasets
+python -m src.data.merge_datasets --datasets datasets/data1.npz datasets/data2.npz --output datasets/merged.npz
+```
+
+### **Training**
+```powershell
+# Local training (Phase 2)
+python -m src.training.train_phase2 --data datasets/random_5k.npz --epochs 10
+
+# Self-play training with soft targets
+python -m src.training.train_selfplay --data datasets/selfplay_data.npz --epochs 20
+
+# Modal GPU training (fast!)
+modal run train_modal_selfplay.py --data-file datasets/random_5k.npz --epochs 10
+```
+
+### **Evaluation**
+```powershell
+# Compare two models
+python -m src.evaluation.test_models --model1 chess_model_sp_v1.pth --model2 chess_model_sp_v2.pth --games 10
+
+# Watch a model play
+python -m src.evaluation.watch_model --model chess_model.pth --games 5
+```
+
+### **Self-Play Generation**
+```powershell
+# Local self-play
+python selfplay_generator.py --games 100 --mcts-sims 50
+
+# Modal GPU self-play (fast!)
+modal run selfplay_modal.py --games 500 --mcts-sims 50 --output-name selfplay_500g.npz
+```
+
+---
 
 ## Parting Words
 
